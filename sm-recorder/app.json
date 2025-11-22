@@ -1,0 +1,21 @@
+{
+"expo": {
+"name": "sm-recorder",
+"slug": "sm-recorder",
+"scheme": "smrecorder",
+"plugins": [],
+"ios": {
+"supportsTablet": true,
+"infoPlist": {
+"NSMicrophoneUsageDescription": "Cette app a besoin du micro pour enregistrer l'audio."
+}
+},
+"android": {
+"permissions": ["RECORD_AUDIO", "INTERNET"],
+"package": "com.example.smrecorder"
+},
+"extra": {
+"SPEECHMATICS_API_KEY": "NUdvFLkeRAKpOnZWfSyWEm9aHsNWmLkm"
+}
+}
+}
