@@ -195,8 +195,4 @@ Create a final ready-to-run Expo project.
 #        AUTONOTE — CONFIGURATION ENV
 # ============================================
 
-# ---- Speechmatics API Key ----
-SPEECHMATICS_API_KEY=NUdvFLkeRAKpOnZWfSyWEm9aHsNWmLkm
-
-# ---- Google Gemini AI Key ----
-GEMINI_API_KEY=AIzaSyDXkqSYdebS62mS2X10dnP5dD7kp5_gO3U
+db3 les api kaqnou hna
