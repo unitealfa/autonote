@@ -7,6 +7,7 @@ type NotesContextValue = {
   ready: boolean;
   addNote: (note: Note) => Promise<void>;
   updateNote: (id: string, data: Partial<Note>) => Promise<void>;
+  deleteNote: (id: string) => Promise<void>;
   getNote: (id: string) => Note | undefined;
   refresh: () => Promise<void>;
 };
@@ -16,6 +17,7 @@ const NotesContext = createContext<NotesContextValue>({
   ready: false,
   addNote: async () => {},
   updateNote: async () => {},
+  deleteNote: async () => {},
   getNote: () => undefined,
   refresh: async () => {},
 });
@@ -66,8 +68,17 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     [notes],
   );
 
+  const deleteNote = useCallback(
+    async (id: string) => {
+      const next = notes.filter((n) => n.id !== id);
+      await persist(next);
+    },
+    [notes, persist],
+  );
+
   return (
-    <NotesContext.Provider value={{ notes, ready, addNote, updateNote, getNote, refresh }}>
+    <NotesContext.Provider
+      value={{ notes, ready, addNote, updateNote, deleteNote, getNote, refresh }}>
       {children}
     </NotesContext.Provider>
   );

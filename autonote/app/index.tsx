@@ -1,5 +1,5 @@
-import RecordScreen from '@/screens/RecordScreen';
+import NotesListScreen from '@/screens/NotesListScreen';
 
 export default function Index() {
-  return <RecordScreen />;
+  return <NotesListScreen />;
 }

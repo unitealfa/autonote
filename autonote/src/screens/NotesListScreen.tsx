@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { GradientScreen } from '@/components/GradientScreen';
 import { GlassCard } from '@/components/GlassCard';
@@ -10,7 +10,7 @@ import { formatDate, formatMillis } from '@/utils/time';
 
 export default function NotesListScreen() {
   const router = useRouter();
-  const { notes, ready } = useNotes();
+  const { notes, ready, deleteNote } = useNotes();
 
   const data = useMemo(
     () =>
@@ -20,6 +20,17 @@ export default function NotesListScreen() {
       })),
     [notes],
   );
+
+  const confirmDelete = (id: string) => {
+    Alert.alert('Supprimer la note ?', 'Cette action est définitive.', [
+      { text: 'Annuler', style: 'cancel' },
+      {
+        text: 'Supprimer',
+        style: 'destructive',
+        onPress: () => deleteNote(id),
+      },
+    ]);
+  };
 
   return (
     <GradientScreen>
@@ -47,8 +58,16 @@ export default function NotesListScreen() {
               style={styles.item}>
               <GlassCard>
                 <View style={styles.itemHeader}>
-                  <Text style={styles.itemTitle}>{item.title || 'Recording'}</Text>
-                  <Text style={styles.duration}>{formatMillis(item.duration)}</Text>
+                  <View>
+                    <Text style={styles.itemTitle}>{item.title || 'Recording'}</Text>
+                    <Text style={styles.duration}>{formatMillis(item.duration)}</Text>
+                  </View>
+                  <Pressable
+                    onPress={() => confirmDelete(item.id)}
+                    style={styles.deleteButton}
+                    hitSlop={10}>
+                    <Text style={styles.deleteText}>Suppr.</Text>
+                  </Pressable>
                 </View>
                 <Text style={styles.date}>{formatDate(item.date)}</Text>
                 <Text style={styles.itemText} numberOfLines={2}>
@@ -113,6 +132,19 @@ const styles = StyleSheet.create({
     color: colors.muted,
     marginTop: 4,
     marginBottom: 8,
+  },
+  deleteButton: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+  },
+  deleteText: {
+    color: colors.danger,
+    fontWeight: '700',
+    fontSize: 12,
   },
   itemText: {
     color: colors.text,
