@@ -25,7 +25,14 @@ const prepareAudioMode = async () => {
 export const startRecording = async () => {
   await prepareAudioMode();
   const recording = new Audio.Recording();
-  await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+  const options = {
+    ...Audio.RecordingOptionsPresets.HIGH_QUALITY,
+    ios: {
+      ...Audio.RecordingOptionsPresets.HIGH_QUALITY.ios,
+      isMeteringEnabled: true,
+    },
+  };
+  await recording.prepareToRecordAsync(options);
   await recording.startAsync();
   return recording;
 };

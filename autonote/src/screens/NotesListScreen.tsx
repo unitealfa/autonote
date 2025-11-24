@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
-import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useMemo, useRef } from 'react';
+import { Alert, Animated, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { GradientScreen } from '@/components/GradientScreen';
 import { GlassCard } from '@/components/GlassCard';
@@ -11,6 +11,16 @@ import { formatDate, formatMillis } from '@/utils/time';
 export default function NotesListScreen() {
   const router = useRouter();
   const { notes, ready, deleteNote } = useNotes();
+  const pulse = useRef(new Animated.Value(0.6)).current;
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1, duration: 900, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 0.6, duration: 900, useNativeDriver: true }),
+      ]),
+    ).start();
+  }, [pulse]);
 
   const data = useMemo(
     () =>
@@ -22,7 +32,7 @@ export default function NotesListScreen() {
   );
 
   const confirmDelete = (id: string) => {
-    Alert.alert('Supprimer la note ?', 'Cette action est définitive.', [
+    Alert.alert('Supprimer la note ?', 'Cette action est definitive.', [
       { text: 'Annuler', style: 'cancel' },
       {
         text: 'Supprimer',
@@ -35,17 +45,26 @@ export default function NotesListScreen() {
   return (
     <GradientScreen>
       <View style={styles.header}>
-        <Text style={styles.eyebrow}>Library</Text>
-        <Text style={styles.title}>Past recordings</Text>
-        <Text style={styles.subtitle}>Tap a note to open the timeline, summary, and audio player.</Text>
+        <View style={styles.titleRow}>
+          <Text style={styles.eyebrow}>Autonote</Text>
+          <View style={styles.pill}>
+            <Text style={styles.pillText}>{notes.length} notes</Text>
+          </View>
+        </View>
+        <Text style={styles.title}>Tes enregistrements</Text>
+        <Text style={styles.subtitle}>Reecoute, explore la timeline, partage le resume Gemini.</Text>
       </View>
 
       {!ready ? (
-        <Text style={styles.muted}>Loading your notes…</Text>
+        <View style={styles.loadingList}>
+          {[0, 1, 2].map((key) => (
+            <Animated.View key={key} style={[styles.loadingCard, { opacity: pulse }]} />
+          ))}
+        </View>
       ) : data.length === 0 ? (
         <GlassCard style={styles.empty}>
-          <Text style={styles.emptyTitle}>No recordings yet</Text>
-          <Text style={styles.muted}>Start a new recording to see it appear here.</Text>
+          <Text style={styles.emptyTitle}>Pas encore de note</Text>
+          <Text style={styles.muted}>Lance un enregistrement pour voir la magie Gemini.</Text>
         </GlassCard>
       ) : (
         <FlatList
@@ -79,20 +98,39 @@ export default function NotesListScreen() {
         />
       )}
 
-      <FloatingActionButton label="New Recording" onPress={() => router.push('/record')} />
+      <FloatingActionButton label="Nouvel enregistrement" onPress={() => router.push('/record')} />
     </GradientScreen>
   );
 }
 
 const styles = StyleSheet.create({
   header: {
-    gap: spacing.sm,
+    gap: spacing.xs,
     marginBottom: spacing.lg,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   eyebrow: {
     color: colors.accentAlt,
     fontWeight: '700',
     letterSpacing: 1,
+  },
+  pill: {
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  pillText: {
+    color: colors.text,
+    fontWeight: '700',
+    fontSize: 12,
+    letterSpacing: 0.3,
   },
   title: {
     color: colors.text,
@@ -105,6 +143,16 @@ const styles = StyleSheet.create({
   },
   muted: {
     color: colors.muted,
+  },
+  loadingList: {
+    gap: spacing.sm,
+  },
+  loadingCard: {
+    height: 90,
+    borderRadius: radius.lg,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.07)',
   },
   list: {
     gap: spacing.md,

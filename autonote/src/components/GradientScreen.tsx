@@ -31,9 +31,11 @@ const styles = StyleSheet.create({
   },
   scroll: {
     padding: spacing.lg,
+    paddingBottom: spacing.lg + spacing.xl * 3,
   },
   content: {
     flex: 1,
     padding: spacing.lg,
+    paddingBottom: spacing.lg + spacing.xl * 3,
   },
 });
