@@ -6,6 +6,7 @@ const genAI = GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null;
 const model = genAI?.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
 type GeminiResponse = {
+  titre?: string;
   resume: string;
   points_importants: string[];
   actions: string[];
@@ -16,6 +17,7 @@ const buildPrompt = (transcript: string, timestamps: WordTimestamp[]) => `
 Analyse le texte et retourne un JSON structurÉ obligatoirement.
 Retourne :
 {
+  "titre": "Titre court, clair, max 8 mots",
   "resume": "",
   "points_importants": [],
   "actions": [],
@@ -41,6 +43,7 @@ export async function summarizeWithGemini(
   transcript: string,
   timestamps: WordTimestamp[] = [],
 ): Promise<{
+  title: string;
   summary: string;
   keyPoints: string[];
   actionItems: string[];
@@ -60,6 +63,7 @@ export async function summarizeWithGemini(
   } catch (error) {
     console.error('Erreur Gemini parse:', error);
     parsed = {
+      titre: '',
       resume: text,
       points_importants: [],
       actions: [],
@@ -67,6 +71,8 @@ export async function summarizeWithGemini(
     };
   }
 
+  const fallbackFromSummary = parsed.resume?.split('\n')?.[0]?.trim() ?? '';
+  const title = (parsed.titre || (parsed as any).title || fallbackFromSummary || '').trim();
   const timedKeywords: TimedKeyword[] =
     parsed.timed_keywords?.map((k) => ({
       keyword: k.word,
@@ -74,6 +80,7 @@ export async function summarizeWithGemini(
     })) ?? [];
 
   return {
+    title,
     summary: parsed.resume ?? '',
     keyPoints: parsed.points_importants ?? [],
     actionItems: parsed.actions ?? [],

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View, Platform } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import * as FileSystem from 'expo-file-system/legacy';
 import { GradientScreen } from '@/components/GradientScreen';
 import { GlassCard } from '@/components/GlassCard';
 import { ProcessingSteps } from '@/components/ProcessingSteps';
@@ -13,6 +14,54 @@ import { estimateKeywordTimes } from '@/utils/timeline';
 
 const clipText = (value: string, max = 800) =>
   value.length > max ? `${value.slice(0, max)}...` : value;
+
+const stripExtension = (value?: string) => (value ? value.replace(/\.[^/.]+$/, '') : '');
+
+const fallbackTitleFromFileName = (fileName?: string) => {
+  const trimmed = stripExtension(fileName) || '';
+  if (trimmed && trimmed.toLowerCase() !== 'recording') return trimmed;
+  return `Note audio ${new Date().toLocaleString()}`;
+};
+
+const extractExtension = (fileName?: string, uri?: string) => {
+  const fromName = fileName?.split('.').pop();
+  if (fromName && fromName.length <= 5) return fromName;
+
+  const uriPart = uri?.split('?')[0];
+  const fromUri = uriPart?.split('.').pop();
+  if (fromUri && fromUri.length <= 5) return fromUri;
+
+  return 'm4a';
+};
+
+const slugifyTitle = (value: string) => {
+  const normalized = value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9]+/g, '-')
+    .replace(/-{2,}/g, '-')
+    .replace(/^-+|-+$/g, '');
+  const base = normalized || 'note';
+  return base.toLowerCase().slice(0, 60);
+};
+
+const renameRecordingWithTitle = async (uri: string, title: string, extension: string) => {
+  if (Platform.OS === 'web') return uri;
+  try {
+    const cleanUri = uri.split('?')[0];
+    const lastSlash = cleanUri.lastIndexOf('/');
+    if (lastSlash === -1) return uri;
+
+    const dir = cleanUri.slice(0, lastSlash + 1);
+    const safeBase = slugifyTitle(title);
+    const target = `${dir}${safeBase}-${Date.now()}.${extension || 'm4a'}`;
+    await FileSystem.moveAsync({ from: uri, to: target });
+    return target;
+  } catch (error) {
+    console.warn('Could not rename recording', error);
+    return uri;
+  }
+};
 
 export default function ProcessingScreen() {
   const router = useRouter();
@@ -50,6 +99,9 @@ export default function ProcessingScreen() {
         setError(null);
         setFailed(false);
         setActiveIndex(0);
+        const defaultTitle = fallbackTitleFromFileName(params.fileName);
+        const audioExtension = extractExtension(params.fileName, params.audioUri);
+        let chosenTitle = defaultTitle;
 
         if (Platform.OS === 'web' && params.audioUri?.startsWith('blob:')) {
           throw new Error(
@@ -84,6 +136,9 @@ export default function ProcessingScreen() {
             summaryText = g.summary;
             points = g.keyPoints ?? [];
             acts = g.actionItems ?? [];
+            if (g.title?.trim()) {
+              chosenTitle = g.title.trim();
+            }
           } catch (e) {
             console.warn('Gemini summary failed', e);
             summaryText = 'Résumé indisponible (erreur Gemini).';
@@ -94,10 +149,12 @@ export default function ProcessingScreen() {
         setActions(acts);
 
         setActiveIndex(3);
+        const finalTitle = chosenTitle || defaultTitle;
+        const renamedUri = await renameRecordingWithTitle(params.audioUri!, finalTitle, audioExtension);
         const note: Note = {
           id: `note-${Date.now()}`,
-          title: params.fileName || 'New recording',
-          audioUri: params.audioUri!,
+          title: finalTitle,
+          audioUri: renamedUri,
           duration: Number(params.duration ?? 0),
           date: new Date().toISOString(),
           transcript: transcriptText,

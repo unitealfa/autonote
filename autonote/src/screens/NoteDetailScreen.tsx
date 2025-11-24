@@ -63,7 +63,7 @@ export default function NoteDetailScreen() {
     <GradientScreen scrollable>
       <View style={styles.header}>
         <Text style={styles.eyebrow}>Recorded</Text>
-        <Text style={styles.title}>{note.title || 'Recording'}</Text>
+        <Text style={styles.title}>{note.title || 'Note audio'}</Text>
         <Text style={styles.subtitle}>
           Duration {formatMillis(note.duration)} — {new Date(note.date).toLocaleString()}
         </Text>

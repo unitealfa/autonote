@@ -59,7 +59,7 @@ export default function NotesListScreen() {
               <GlassCard>
                 <View style={styles.itemHeader}>
                   <View>
-                    <Text style={styles.itemTitle}>{item.title || 'Recording'}</Text>
+                    <Text style={styles.itemTitle}>{item.title || 'Note audio'}</Text>
                     <Text style={styles.duration}>{formatMillis(item.duration)}</Text>
                   </View>
                   <Pressable
