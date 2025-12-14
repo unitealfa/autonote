@@ -1,11 +1,22 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View, Platform } from 'react-native';
+import { StyleSheet, Text, View, Platform, Pressable } from 'react-native';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withSequence,
+  withSpring,
+  withTiming,
+  Easing,
+} from 'react-native-reanimated';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as FileSystem from 'expo-file-system/legacy';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Feather } from '@expo/vector-icons';
 import { GradientScreen } from '@/components/GradientScreen';
 import { GlassCard } from '@/components/GlassCard';
 import { ProcessingSteps } from '@/components/ProcessingSteps';
-import { colors, spacing, radius } from '@/styles/theme';
+import { colors, gradients, spacing, radius, animations } from '@/styles/theme';
 import { uploadToSpeechmatics, pollSpeechmaticsTranscript } from '@/api/speechmatics';
 import { summarizeWithGemini } from '@/api/gemini';
 import { useNotes } from '@/context/NotesContext';
@@ -26,11 +37,9 @@ const fallbackTitleFromFileName = (fileName?: string) => {
 const extractExtension = (fileName?: string, uri?: string) => {
   const fromName = fileName?.split('.').pop();
   if (fromName && fromName.length <= 5) return fromName;
-
   const uriPart = uri?.split('?')[0];
   const fromUri = uriPart?.split('.').pop();
   if (fromUri && fromUri.length <= 5) return fromUri;
-
   return 'm4a';
 };
 
@@ -41,8 +50,7 @@ const slugifyTitle = (value: string) => {
     .replace(/[^a-zA-Z0-9]+/g, '-')
     .replace(/-{2,}/g, '-')
     .replace(/^-+|-+$/g, '');
-  const base = normalized || 'note';
-  return base.toLowerCase().slice(0, 60);
+  return (normalized || 'note').toLowerCase().slice(0, 60);
 };
 
 const renameRecordingWithTitle = async (uri: string, title: string, extension: string) => {
@@ -51,14 +59,12 @@ const renameRecordingWithTitle = async (uri: string, title: string, extension: s
     const cleanUri = uri.split('?')[0];
     const lastSlash = cleanUri.lastIndexOf('/');
     if (lastSlash === -1) return uri;
-
     const dir = cleanUri.slice(0, lastSlash + 1);
     const safeBase = slugifyTitle(title);
     const target = `${dir}${safeBase}-${Date.now()}.${extension || 'm4a'}`;
     await FileSystem.moveAsync({ from: uri, to: target });
     return target;
-  } catch (error) {
-    console.warn('Could not rename recording', error);
+  } catch {
     return uri;
   }
 };
@@ -72,18 +78,51 @@ export default function ProcessingScreen() {
   const [error, setError] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const [transcript, setTranscript] = useState('');
-  const [speechmaticsRaw, setSpeechmaticsRaw] = useState('');
-  const [timelinePreview, setTimelinePreview] = useState('');
   const [summary, setSummary] = useState('');
   const [keyPoints, setKeyPoints] = useState<string[]>([]);
-  const [actions, setActions] = useState<string[]>([]);
+
+  // Animations
+  const headerOpacity = useSharedValue(0);
+  const headerY = useSharedValue(-20);
+  const spinnerRotation = useSharedValue(0);
+  const progressPulse = useSharedValue(0.8);
+  const ringScale = useSharedValue(1);
+
+  useEffect(() => {
+    headerOpacity.value = withTiming(1, { duration: 400 });
+    headerY.value = withSpring(0, animations.spring);
+
+    spinnerRotation.value = withRepeat(
+      withTiming(360, { duration: 2000, easing: Easing.linear }),
+      -1,
+      false,
+    );
+
+    progressPulse.value = withRepeat(
+      withSequence(
+        withTiming(1, { duration: 800 }),
+        withTiming(0.8, { duration: 800 }),
+      ),
+      -1,
+      true,
+    );
+
+    ringScale.value = withRepeat(
+      withSequence(
+        withTiming(1.1, { duration: 1500 }),
+        withTiming(0.9, { duration: 1500 }),
+      ),
+      -1,
+      true,
+    );
+  }, [headerOpacity, headerY, progressPulse, ringScale, spinnerRotation]);
 
   const steps = useMemo(
     () => [
-      { label: 'Uploading audio...', active: activeIndex === 0, done: activeIndex > 0 },
-      { label: 'Transcribing...', active: activeIndex === 1, done: activeIndex > 1 },
-      { label: 'Generating summary...', active: activeIndex === 2, done: activeIndex > 2 },
-      { label: 'Saving note...', active: activeIndex === 3, done: activeIndex > 3 },
+      { label: 'Upload audio...', active: activeIndex === 0, done: activeIndex > 0 },
+      { label: 'Transcription...', active: activeIndex === 1, done: activeIndex > 1 },
+      { label: 'Génération résumé...', active: activeIndex === 2, done: activeIndex > 2 },
+      { label: 'Sauvegarde...', active: activeIndex === 3, done: activeIndex > 3 },
     ],
     [activeIndex],
   );
@@ -104,30 +143,21 @@ export default function ProcessingScreen() {
         let chosenTitle = defaultTitle;
 
         if (Platform.OS === 'web' && params.audioUri?.startsWith('blob:')) {
-          throw new Error(
-            "L'envoi vers Speechmatics n'est pas supporté pour les enregistrements web. Utilise un device natif ou sauvegarde hors ligne.",
-          );
+          throw new Error("Upload non supporté pour les enregistrements web.");
         }
 
         const jobId = await uploadToSpeechmatics(params.audioUri!);
-
         setActiveIndex(1);
+
         const { transcriptText, timeline, transcriptJson } = await pollSpeechmaticsTranscript(
           jobId,
           (status) => setActiveIndex(status === 'done' ? 2 : 1),
         );
 
-        setTranscript(transcriptText || '(Transcript vide renvoyé)');
-        setSpeechmaticsRaw(JSON.stringify(transcriptJson, null, 2));
-        setTimelinePreview(
-          timeline
-            .slice(0, 12)
-            .map((t) => `${t.word} (${t.start.toFixed(2)}-${t.end.toFixed(2)})`)
-            .join(' | '),
-        );
-
+        setTranscript(transcriptText || '(Vide)');
         setActiveIndex(2);
-        let summaryText = 'Transcript vide reçu de Speechmatics.';
+
+        let summaryText = 'Transcript vide.';
         let points: string[] = [];
         let acts: string[] = [];
         if (transcriptText && transcriptText.length > 0) {
@@ -136,17 +166,13 @@ export default function ProcessingScreen() {
             summaryText = g.summary;
             points = g.keyPoints ?? [];
             acts = g.actionItems ?? [];
-            if (g.title?.trim()) {
-              chosenTitle = g.title.trim();
-            }
-          } catch (e) {
-            console.warn('Gemini summary failed', e);
-            summaryText = 'Résumé indisponible (erreur Gemini).';
+            if (g.title?.trim()) chosenTitle = g.title.trim();
+          } catch {
+            summaryText = 'Résumé indisponible.';
           }
         }
         setSummary(summaryText);
         setKeyPoints(points);
-        setActions(acts);
 
         setActiveIndex(3);
         const finalTitle = chosenTitle || defaultTitle;
@@ -170,81 +196,117 @@ export default function ProcessingScreen() {
         setActiveIndex(4);
         router.replace({ pathname: '/note/[id]', params: { id: note.id } });
       } catch (err) {
-        console.error(err);
-        const msg = (err as Error).message || 'Network request failed';
+        const msg = (err as Error).message || 'Erreur réseau';
         setError(msg);
         setFailed(true);
-        Alert.alert('Processing failed', msg);
       }
     };
 
     process();
   }, [addNote, params.audioUri, params.duration, params.fileName, router]);
 
+  const headerStyle = useAnimatedStyle(() => ({
+    opacity: headerOpacity.value,
+    transform: [{ translateY: headerY.value }],
+  }));
+
+  const spinnerStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${spinnerRotation.value}deg` }],
+  }));
+
+  const pulseStyle = useAnimatedStyle(() => ({
+    opacity: progressPulse.value,
+    transform: [{ scale: ringScale.value }],
+  }));
+
   return (
     <GradientScreen scrollable>
-      <View style={styles.header}>
-        <Text style={styles.eyebrow}>Processing</Text>
+      {/* Header */}
+      <Animated.View style={[styles.header, headerStyle]}>
+        <View style={styles.eyebrowRow}>
+          <LinearGradient colors={gradients.gold} style={styles.eyebrowBadge}>
+            <Text style={styles.eyebrow}>PROCESSING</Text>
+          </LinearGradient>
+          <Text style={styles.crown}>⚙️</Text>
+        </View>
         <Text style={styles.title}>Transcription + Résumé</Text>
         <Text style={styles.subtitle}>
-          Audio envoyé à Speechmatics puis résumé en français par Gemini. Aperçu ci-dessous.
+          Audio envoyé à Speechmatics puis résumé par Gemini ✨
         </Text>
-      </View>
-      <GlassCard style={styles.card}>
+      </Animated.View>
+
+      {/* Main processing card */}
+      <GlassCard style={styles.card} glowing={!error}>
+        {/* Animated loader */}
+        <View style={styles.loaderContainer}>
+          <Animated.View style={[styles.loaderRing, pulseStyle]} />
+          <Animated.View style={[styles.spinner, spinnerStyle]}>
+            <LinearGradient
+              colors={error ? [colors.danger, colors.danger] : gradients.gold}
+              style={styles.spinnerGradient}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            />
+          </Animated.View>
+          <View style={styles.loaderCenter}>
+            {error ? (
+              <Feather name="alert-circle" size={32} color={colors.danger} />
+            ) : activeIndex >= 4 ? (
+              <Feather name="check" size={32} color={colors.success} />
+            ) : (
+              <Text style={styles.loaderPercent}>{Math.min(100, Math.round(((activeIndex + 1) / 5) * 100))}%</Text>
+            )}
+          </View>
+        </View>
+
+        {/* Processing steps */}
         <ProcessingSteps steps={steps} />
-        <View style={styles.loader}>
-          <ActivityIndicator color={colors.accent} size="large" />
+
+        {/* Status message */}
+        <View style={styles.statusContainer}>
           {error ? (
             <>
-              <Text style={styles.error}>{error}</Text>
-              <Text style={styles.muted}>Vérifie la connexion ou la clé API.</Text>
-              {failed ? (
-                <Pressable style={styles.offlineButton} onPress={() => router.replace('/record')}>
-                  <Text style={styles.offlineLabel}>Retour</Text>
+              <Text style={styles.errorText}>{error}</Text>
+              <Text style={styles.hint}>Vérifie la connexion ou la clé API.</Text>
+              {failed && (
+                <Pressable style={styles.retryButton} onPress={() => router.replace('/record')}>
+                  <Feather name="arrow-left" size={16} color={colors.gold} />
+                  <Text style={styles.retryText}>Retour</Text>
                 </Pressable>
-              ) : null}
+              )}
             </>
           ) : (
-            <Text style={styles.muted}>Cela peut prendre quelques secondes…</Text>
+            <Text style={styles.hint}>Cela peut prendre quelques secondes...</Text>
           )}
         </View>
+
+        {/* Preview sections */}
         {!!transcript && (
           <View style={styles.previewBlock}>
-            <Text style={styles.previewTitle}>Transcript</Text>
-            <Text style={styles.previewText}>{clipText(transcript, 1200)}</Text>
+            <View style={styles.previewHeader}>
+              <Feather name="file-text" size={16} color={colors.gold} />
+              <Text style={styles.previewTitle}>Transcript</Text>
+            </View>
+            <Text style={styles.previewText}>{clipText(transcript, 400)}</Text>
           </View>
         )}
-        {!!timelinePreview && (
-          <View style={styles.previewBlock}>
-            <Text style={styles.previewTitle}>Timeline (aperçu)</Text>
-            <Text style={styles.previewText}>{timelinePreview}</Text>
-          </View>
-        )}
-        {!!speechmaticsRaw && (
-          <View style={styles.previewBlock}>
-            <Text style={styles.previewTitle}>Réponse Speechmatics (JSON)</Text>
-            <Text style={styles.previewCode}>{clipText(speechmaticsRaw, 1000)}</Text>
-          </View>
-        )}
+
         {!!summary && (
           <View style={styles.previewBlock}>
-            <Text style={styles.previewTitle}>Résumé (Gemini)</Text>
-            <Text style={styles.previewText}>{clipText(summary, 1200)}</Text>
-            {!!keyPoints.length && (
-              <>
-                <Text style={styles.previewTitle}>Points clés</Text>
-                {keyPoints.map((kp) => (
-                  <Text key={kp} style={styles.previewText}>• {kp}</Text>
+            <View style={styles.previewHeader}>
+              <Feather name="zap" size={16} color={colors.gold} />
+              <Text style={styles.previewTitle}>Résumé Gemini</Text>
+            </View>
+            <Text style={styles.previewText}>{clipText(summary, 400)}</Text>
+            {keyPoints.length > 0 && (
+              <View style={styles.keyPointsList}>
+                {keyPoints.slice(0, 3).map((kp) => (
+                  <View key={kp} style={styles.keyPointItem}>
+                    <View style={styles.keyPointDot} />
+                    <Text style={styles.keyPointText}>{kp}</Text>
+                  </View>
                 ))}
-              </>
-            )}
-            {!!actions.length && (
-              <>
-                <Text style={styles.previewTitle}>Actions</Text>
-                {actions.map((act) => (
-                  <Text key={act} style={styles.previewText}>• {act}</Text>
-                ))}
-              </>
+              </View>
             )}
           </View>
         )}
@@ -258,75 +320,156 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     marginBottom: spacing.lg,
   },
-  eyebrow: {
-    color: colors.accentAlt,
-    letterSpacing: 1,
-    fontWeight: '700',
-  },
-  title: {
-    color: colors.text,
-    fontSize: 24,
-    fontWeight: '800',
-  },
-  subtitle: {
-    color: colors.muted,
-    lineHeight: 20,
-  },
-  card: {
-    gap: spacing.lg,
-  },
-  loader: {
+  eyebrowRow: {
+    flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
   },
-  muted: {
+  eyebrowBadge: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.sm,
+  },
+  eyebrow: {
+    color: colors.backgroundDeep,
+    letterSpacing: 2,
+    fontWeight: '800',
+    fontSize: 11,
+  },
+  crown: {
+    fontSize: 18,
+  },
+  title: {
+    color: colors.text,
+    fontSize: 26,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+  },
+  subtitle: {
     color: colors.muted,
+    fontSize: 15,
+    lineHeight: 22,
   },
-  error: {
-    color: colors.danger,
-    textAlign: 'center',
+  card: {
+    gap: spacing.xl,
   },
-  offlineButton: {
-    marginTop: spacing.sm,
-    backgroundColor: colors.cardStrong,
-    borderRadius: radius.md,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    borderWidth: 1,
+  loaderContainer: {
+    alignSelf: 'center',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 120,
+    height: 120,
+    marginBottom: spacing.md,
+  },
+  loaderRing: {
+    position: 'absolute',
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    borderWidth: 3,
+    borderColor: 'rgba(212, 175, 55, 0.3)',
+  },
+  spinner: {
+    position: 'absolute',
+    width: 110,
+    height: 110,
+    borderRadius: 55,
+    overflow: 'hidden',
+  },
+  spinnerGradient: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 55,
+    opacity: 0.3,
+  },
+  loaderCenter: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: colors.backgroundAlt,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
     borderColor: colors.border,
   },
-  offlineLabel: {
-    color: colors.text,
+  loaderPercent: {
+    color: colors.gold,
+    fontSize: 22,
+    fontWeight: '800',
+  },
+  statusContainer: {
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  hint: {
+    color: colors.muted,
+    fontSize: 13,
+    textAlign: 'center',
+  },
+  errorText: {
+    color: colors.danger,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  retryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: 'rgba(212, 175, 55, 0.15)',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginTop: spacing.sm,
+  },
+  retryText: {
+    color: colors.gold,
     fontWeight: '700',
   },
   previewBlock: {
-    marginTop: spacing.md,
-    gap: spacing.xs,
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    borderRadius: radius.md,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  previewHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
   },
   previewTitle: {
     color: colors.text,
     fontWeight: '700',
+    fontSize: 14,
   },
   previewText: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 20,
+  },
+  keyPointsList: {
+    marginTop: spacing.sm,
+    gap: spacing.xs,
+  },
+  keyPointItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+  },
+  keyPointDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.gold,
+    marginTop: 6,
+  },
+  keyPointText: {
+    flex: 1,
     color: colors.text,
+    fontSize: 13,
     lineHeight: 18,
-  },
-  previewCode: {
-    color: colors.muted,
-    fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace', default: 'monospace' }),
-    fontSize: 12,
-    lineHeight: 16,
-  },
-  backButton: {
-    marginTop: spacing.lg,
-    backgroundColor: colors.accent,
-    borderRadius: radius.md,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    alignItems: 'center',
-  },
-  backLabel: {
-    color: '#0b1021',
-    fontWeight: '700',
   },
 });

@@ -1,13 +1,22 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View, Platform } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View, Platform } from 'react-native';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withDelay,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Feather } from '@expo/vector-icons';
 import { GradientScreen } from '@/components/GradientScreen';
 import { GlassCard } from '@/components/GlassCard';
 import { TimelineSegment } from '@/components/TimelineSegment';
 import { AudioProgress } from '@/components/AudioProgress';
 import { useNotes } from '@/context/NotesContext';
 import { useAudioPlayer } from '@/hooks/useAudioPlayer';
-import { colors, radius, spacing } from '@/styles/theme';
+import { colors, gradients, radius, spacing, animations } from '@/styles/theme';
 import { chunkTimeline } from '@/utils/timeline';
 import { formatMillis } from '@/utils/time';
 
@@ -24,6 +33,15 @@ export default function NoteDetailScreen() {
   const [actionsText, setActionsText] = useState((note?.actionItems ?? []).join('\n'));
   const [notesText, setNotesText] = useState(note?.notes ?? '');
 
+  // Animations
+  const headerOpacity = useSharedValue(0);
+  const headerY = useSharedValue(-20);
+
+  useEffect(() => {
+    headerOpacity.value = withTiming(1, { duration: 400 });
+    headerY.value = withSpring(0, animations.spring);
+  }, [headerOpacity, headerY]);
+
   useEffect(() => {
     if (note) {
       setSummary(note.summary);
@@ -33,170 +51,337 @@ export default function NoteDetailScreen() {
     }
   }, [note?.id]);
 
+  const headerStyle = useAnimatedStyle(() => ({
+    opacity: headerOpacity.value,
+    transform: [{ translateY: headerY.value }],
+  }));
+
   if (!note) {
     return (
       <GradientScreen>
-        <Text style={styles.error}>Note not found.</Text>
-        <Pressable onPress={() => router.replace('/')}>
-          <Text style={styles.link}>Go back</Text>
-        </Pressable>
+        <View style={styles.notFound}>
+          <Text style={styles.notFoundEmoji}>🔍</Text>
+          <Text style={styles.error}>Note introuvable</Text>
+          <Pressable onPress={() => router.replace('/')} style={styles.backLink}>
+            <Feather name="arrow-left" size={18} color={colors.gold} />
+            <Text style={styles.link}>Retour</Text>
+          </Pressable>
+        </View>
       </GradientScreen>
     );
   }
 
   const saveSummary = async () => updateNote(note.id, { summary });
   const saveKeyPoints = async () =>
-    updateNote(
-      note.id,
-      { keyPoints: keyPointsText.split('\n').map((line) => line.trim()).filter(Boolean) },
-    );
+    updateNote(note.id, {
+      keyPoints: keyPointsText.split('\n').map((l) => l.trim()).filter(Boolean),
+    });
   const saveActions = async () =>
-    updateNote(
-      note.id,
-      { actionItems: actionsText.split('\n').map((line) => line.trim()).filter(Boolean) },
-    );
+    updateNote(note.id, {
+      actionItems: actionsText.split('\n').map((l) => l.trim()).filter(Boolean),
+    });
   const saveNotes = async () => updateNote(note.id, { notes: notesText });
 
   const segments = useMemo(() => chunkTimeline(note.timeline), [note.timeline]);
 
   return (
     <GradientScreen scrollable>
-      <View style={styles.header}>
-        <Text style={styles.eyebrow}>Recorded</Text>
-        <Text style={styles.title}>{note.title || 'Note audio'}</Text>
-        <Text style={styles.subtitle}>
-          Duration {formatMillis(note.duration)} — {new Date(note.date).toLocaleString()}
-        </Text>
-      </View>
-
-      <GlassCard style={styles.card}>
-        <View style={styles.playerRow}>
-          <Pressable
-            style={[styles.playButton, playbackError && styles.playButtonDisabled]}
-            onPress={player.toggle}
-            disabled={!!playbackError}>
-            <Text style={styles.playLabel}>
-              {playbackError ? 'Unavailable' : player.isPlaying ? 'Pause' : 'Play'}
-            </Text>
-          </Pressable>
-          <View style={{ flex: 1 }}>
-            <AudioProgress position={player.position} duration={player.duration} onSeek={player.seekTo} />
+      {/* Header */}
+      <Animated.View style={[styles.header, headerStyle]}>
+        <Pressable onPress={() => router.back()} style={styles.backButton}>
+          <Feather name="arrow-left" size={20} color={colors.gold} />
+        </Pressable>
+        <View style={styles.headerContent}>
+          <LinearGradient colors={gradients.gold} style={styles.eyebrowBadge}>
+            <Text style={styles.eyebrow}>RECORDED</Text>
+          </LinearGradient>
+          <Text style={styles.title}>{note.title || 'Note audio'}</Text>
+          <View style={styles.metaRow}>
+            <View style={styles.metaItem}>
+              <Feather name="clock" size={14} color={colors.muted} />
+              <Text style={styles.metaText}>{formatMillis(note.duration)}</Text>
+            </View>
+            <View style={styles.metaDot} />
+            <View style={styles.metaItem}>
+              <Feather name="calendar" size={14} color={colors.muted} />
+              <Text style={styles.metaText}>{new Date(note.date).toLocaleDateString()}</Text>
+            </View>
           </View>
         </View>
-        {playbackError ? (
-          <Text style={styles.error}>{playbackError}</Text>
-        ) : (
-          <Text style={styles.muted}>Tap the bar or any timeline block to jump to that moment.</Text>
-        )}
-      </GlassCard>
+      </Animated.View>
 
-      <GlassCard style={styles.card}>
-        <Text style={styles.sectionTitle}>Summary</Text>
-        <TextInput
-          multiline
-          value={summary}
-          onChangeText={setSummary}
-          onBlur={saveSummary}
-          placeholder="Edit the summary..."
-          placeholderTextColor={colors.muted}
-          style={styles.textArea}
-        />
-      </GlassCard>
-
-      <GlassCard style={styles.card}>
-        <Text style={styles.sectionTitle}>Key points</Text>
-        <TextInput
-          multiline
-          value={keyPointsText}
-          onChangeText={setKeyPointsText}
-          onBlur={saveKeyPoints}
-          placeholder="One bullet per line"
-          placeholderTextColor={colors.muted}
-          style={styles.textArea}
-        />
-        <Text style={styles.sectionTitle}>Action items</Text>
-        <TextInput
-          multiline
-          value={actionsText}
-          onChangeText={setActionsText}
-          onBlur={saveActions}
-          placeholder="One action per line"
-          placeholderTextColor={colors.muted}
-          style={styles.textArea}
-        />
-      </GlassCard>
-
-      <GlassCard style={styles.card}>
-        <Text style={styles.sectionTitle}>Notes</Text>
-        <TextInput
-          multiline
-          value={notesText}
-          onChangeText={setNotesText}
-          onBlur={saveNotes}
-          placeholder="Add your own notes or decisions..."
-          placeholderTextColor={colors.muted}
-          style={styles.textArea}
-        />
-      </GlassCard>
-
-      <GlassCard style={styles.card}>
-        <Text style={styles.sectionTitle}>Timeline</Text>
-        <ScrollView style={styles.timeline} nestedScrollEnabled>
-          {segments.map((segment, idx) => (
-            <TimelineSegment
-              key={`${segment.start}-${idx}`}
-              text={segment.text}
-              startMs={segment.start * 1000}
-              onPress={(ms) => {
-                if (!playbackError) {
-                  player.seekTo(ms);
-                }
-              }}
-            />
-          ))}
-        </ScrollView>
-      </GlassCard>
-
-      <View style={styles.keywordRow}>
-        {note.timedKeywords.map((keyword) => (
-          <View key={keyword.keyword} style={styles.keyword}>
-            <Text style={styles.keywordLabel}>{keyword.keyword}</Text>
-            <Text style={styles.keywordTime}>{formatMillis(keyword.time * 1000)}</Text>
+      {/* Audio Player */}
+      <AnimatedCard delay={100}>
+        <GlassCard glowing>
+          <View style={styles.playerHeader}>
+            <Feather name="headphones" size={20} color={colors.gold} />
+            <Text style={styles.sectionTitle}>Lecteur audio</Text>
           </View>
-        ))}
-      </View>
+          <View style={styles.playerRow}>
+            <Pressable
+              style={[styles.playButton, playbackError && styles.playButtonDisabled]}
+              onPress={player.toggle}
+              disabled={!!playbackError}>
+              <LinearGradient
+                colors={playbackError ? [colors.muted, colors.muted] : gradients.gold}
+                style={styles.playButtonGradient}>
+                <Feather
+                  name={player.isPlaying ? 'pause' : 'play'}
+                  size={24}
+                  color={colors.backgroundDeep}
+                />
+              </LinearGradient>
+            </Pressable>
+            <View style={{ flex: 1 }}>
+              <AudioProgress position={player.position} duration={player.duration} onSeek={player.seekTo} />
+            </View>
+          </View>
+          {playbackError ? (
+            <Text style={styles.errorText}>{playbackError}</Text>
+          ) : (
+            <Text style={styles.hint}>Touche la barre ou la timeline pour naviguer</Text>
+          )}
+        </GlassCard>
+      </AnimatedCard>
+
+      {/* Summary */}
+      <AnimatedCard delay={200}>
+        <GlassCard>
+          <SectionHeader icon="file-text" title="Résumé" />
+          <TextInput
+            multiline
+            value={summary}
+            onChangeText={setSummary}
+            onBlur={saveSummary}
+            placeholder="Éditer le résumé..."
+            placeholderTextColor={colors.muted}
+            style={styles.textArea}
+          />
+        </GlassCard>
+      </AnimatedCard>
+
+      {/* Key Points & Actions */}
+      <AnimatedCard delay={300}>
+        <GlassCard>
+          <SectionHeader icon="star" title="Points clés" />
+          <TextInput
+            multiline
+            value={keyPointsText}
+            onChangeText={setKeyPointsText}
+            onBlur={saveKeyPoints}
+            placeholder="Un point par ligne"
+            placeholderTextColor={colors.muted}
+            style={styles.textArea}
+          />
+          <SectionHeader icon="check-circle" title="Actions" style={{ marginTop: spacing.lg }} />
+          <TextInput
+            multiline
+            value={actionsText}
+            onChangeText={setActionsText}
+            onBlur={saveActions}
+            placeholder="Une action par ligne"
+            placeholderTextColor={colors.muted}
+            style={styles.textArea}
+          />
+        </GlassCard>
+      </AnimatedCard>
+
+      {/* Notes */}
+      <AnimatedCard delay={400}>
+        <GlassCard>
+          <SectionHeader icon="edit-3" title="Notes personnelles" />
+          <TextInput
+            multiline
+            value={notesText}
+            onChangeText={setNotesText}
+            onBlur={saveNotes}
+            placeholder="Ajoute tes notes ou décisions..."
+            placeholderTextColor={colors.muted}
+            style={styles.textArea}
+          />
+        </GlassCard>
+      </AnimatedCard>
+
+      {/* Timeline */}
+      <AnimatedCard delay={500}>
+        <GlassCard>
+          <SectionHeader icon="clock" title="Timeline" />
+          <ScrollView style={styles.timeline} nestedScrollEnabled showsVerticalScrollIndicator={false}>
+            {segments.map((segment, idx) => (
+              <TimelineSegment
+                key={`${segment.start}-${idx}`}
+                text={segment.text}
+                startMs={segment.start * 1000}
+                index={idx}
+                onPress={(ms) => {
+                  if (!playbackError) player.seekTo(ms);
+                }}
+              />
+            ))}
+          </ScrollView>
+        </GlassCard>
+      </AnimatedCard>
+
+      {/* Keywords */}
+      {note.timedKeywords.length > 0 && (
+        <AnimatedCard delay={600}>
+          <View style={styles.keywordRow}>
+            {note.timedKeywords.map((kw, i) => (
+              <KeywordBadge key={kw.keyword} keyword={kw} index={i} />
+            ))}
+          </View>
+        </AnimatedCard>
+      )}
     </GradientScreen>
   );
 }
 
+// Animated card wrapper
+const AnimatedCard: React.FC<{ children: React.ReactNode; delay: number }> = ({ children, delay }) => {
+  const scale = useSharedValue(0.95);
+  const opacity = useSharedValue(0);
+  const translateY = useSharedValue(20);
+
+  useEffect(() => {
+    scale.value = withDelay(delay, withSpring(1, animations.spring));
+    opacity.value = withDelay(delay, withTiming(1, { duration: 300 }));
+    translateY.value = withDelay(delay, withSpring(0, animations.spring));
+  }, [delay, opacity, scale, translateY]);
+
+  const style = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }, { translateY: translateY.value }],
+    opacity: opacity.value,
+    marginBottom: spacing.lg,
+  }));
+
+  return <Animated.View style={style}>{children}</Animated.View>;
+};
+
+// Section header
+const SectionHeader: React.FC<{ icon: string; title: string; style?: any }> = ({ icon, title, style }) => (
+  <View style={[styles.sectionHeader, style]}>
+    <Feather name={icon as any} size={18} color={colors.gold} />
+    <Text style={styles.sectionTitle}>{title}</Text>
+  </View>
+);
+
+// Keyword badge
+const KeywordBadge: React.FC<{ keyword: { keyword: string; time: number }; index: number }> = ({ keyword, index }) => {
+  const scale = useSharedValue(0);
+
+  useEffect(() => {
+    scale.value = withDelay(index * 50, withSpring(1, animations.springBouncy));
+  }, [index, scale]);
+
+  const style = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  return (
+    <Animated.View style={[styles.keyword, style]}>
+      <LinearGradient
+        colors={['rgba(212, 175, 55, 0.15)', 'rgba(212, 175, 55, 0.05)']}
+        style={StyleSheet.absoluteFill}
+      />
+      <Text style={styles.keywordLabel}>{keyword.keyword}</Text>
+      <Text style={styles.keywordTime}>{formatMillis(keyword.time * 1000)}</Text>
+    </Animated.View>
+  );
+};
+
 const styles = StyleSheet.create({
   header: {
-    gap: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.md,
     marginBottom: spacing.lg,
   },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(212, 175, 55, 0.15)',
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerContent: {
+    flex: 1,
+    gap: spacing.xs,
+  },
+  eyebrowBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.sm,
+  },
   eyebrow: {
-    color: colors.accentAlt,
-    fontWeight: '700',
-    letterSpacing: 1,
+    color: colors.backgroundDeep,
+    fontWeight: '800',
+    letterSpacing: 2,
+    fontSize: 10,
   },
   title: {
     color: colors.text,
     fontSize: 24,
     fontWeight: '800',
+    letterSpacing: -0.5,
   },
-  subtitle: {
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  metaItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  metaText: {
     color: colors.muted,
+    fontSize: 13,
+  },
+  metaDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.border,
+  },
+  notFound: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.md,
+  },
+  notFoundEmoji: {
+    fontSize: 48,
   },
   error: {
-    color: colors.danger,
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: '700',
   },
-  link: {
-    color: colors.accent,
+  errorText: {
+    color: colors.danger,
+    fontSize: 13,
+    marginTop: spacing.xs,
+  },
+  backLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
     marginTop: spacing.sm,
   },
-  card: {
-    marginBottom: spacing.lg,
+  link: {
+    color: colors.gold,
+    fontWeight: '700',
+  },
+  playerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing.sm,
+    marginBottom: spacing.md,
   },
   playerRow: {
     flexDirection: 'row',
@@ -204,25 +389,34 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   playButton: {
-    backgroundColor: colors.accent,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    borderRadius: 28,
+    overflow: 'hidden',
   },
   playButtonDisabled: {
-    backgroundColor: colors.border,
+    opacity: 0.5,
   },
-  playLabel: {
-    color: '#0b1021',
-    fontWeight: '700',
+  playButtonGradient: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  muted: {
+  hint: {
     color: colors.muted,
+    fontSize: 12,
+    marginTop: spacing.sm,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
   },
   sectionTitle: {
     color: colors.text,
     fontWeight: '700',
-    marginTop: spacing.xs,
+    fontSize: 15,
   },
   textArea: {
     color: colors.text,
@@ -230,12 +424,14 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     padding: spacing.md,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: colors.border,
     minHeight: 80,
     textAlignVertical: 'top',
+    fontSize: 15,
+    lineHeight: 22,
   },
   timeline: {
-    maxHeight: 320,
+    maxHeight: 350,
   },
   keywordRow: {
     flexDirection: 'row',
@@ -244,19 +440,21 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   keyword: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderRadius: radius.md,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
+    borderColor: colors.border,
+    overflow: 'hidden',
   },
   keywordLabel: {
-    color: colors.text,
+    color: colors.gold,
     fontWeight: '700',
+    fontSize: 13,
   },
   keywordTime: {
     color: colors.muted,
-    fontSize: 12,
+    fontSize: 11,
+    marginTop: 2,
   },
 });

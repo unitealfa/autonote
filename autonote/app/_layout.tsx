@@ -1,3 +1,4 @@
+import '@/utils/warnings';
 import 'react-native-gesture-handler';
 import 'react-native-reanimated';
 import { Stack } from 'expo-router';

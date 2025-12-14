@@ -3,7 +3,7 @@ import { WordTimestamp, TimedKeyword } from '@/types/note';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 const genAI = GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null;
-const model = genAI?.getGenerativeModel({ model: 'gemini-2.0-flash' });
+const model = genAI?.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
 type GeminiResponse = {
   titre?: string;
