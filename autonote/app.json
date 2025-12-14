@@ -9,9 +9,11 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.autonote.app"
     },
     "android": {
+      "package": "com.autonote.app",
       "adaptiveIcon": {
         "backgroundColor": "#0a0e1f",
         "foregroundImage": "./assets/images/logo_meme-removebg-preview.png"
@@ -41,6 +43,12 @@
     "experiments": {
       "typedRoutes": false,
       "reactCompiler": false
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "60ef1e6e-fba2-4294-b393-364151cb2cc0"
+      }
     }
   }
 }

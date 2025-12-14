@@ -1,5 +1,5 @@
 // Real Madrid Royal Theme 👑
-// Blanc (White), Or (Gold), Bleu Marine (Navy Blue)
+
 
 export const colors = {
   // Backgrounds - Deep navy/midnight
